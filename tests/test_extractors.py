@@ -152,3 +152,34 @@ def test_monthly_counts_empty_response(extractor):
         result = extractor.monthly_counts()
 
     assert result == {}
+
+
+# ----- month_bounds() method -------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("month", "expected_start", "expected_end"),
+    [
+        ("2020-01", "2020-01-01T00:00:00", "2020-02-01T00:00:00"),
+        ("2020-02", "2020-02-01T00:00:00", "2020-03-01T00:00:00"),
+        ("2020-11", "2020-11-01T00:00:00", "2020-12-01T00:00:00"),
+    ],
+)
+def test_month_bounds_standard_months(month, expected_start, expected_end):
+    """Verifies standard months return the 1st of the month and 1st of the next month."""
+    start, end = ServiceRequestExtractor.month_bounds(month)
+    assert start == expected_start
+    assert end == expected_end
+
+
+def test_month_bounds_december_rollover():
+    """Verifies December rolls over cleanly to January of the following year."""
+    start, end = ServiceRequestExtractor.month_bounds("2020-12")
+    assert start == "2020-12-01T00:00:00"
+    assert end == "2021-01-01T00:00:00"
+
+
+def test_month_bounds_invalid_format_raises_value_error():
+    """Verifies non-numeric month strings raise a ValueError."""
+    with pytest.raises(ValueError):
+        ServiceRequestExtractor.month_bounds("invalid")

@@ -23,9 +23,8 @@ from __future__ import annotations
 # import csv
 import os
 import time
+from datetime import date  # , datetime, timedelta, timezone
 from pathlib import Path
-
-# from datetime import date, datetime, timedelta, timezone
 from typing import ClassVar
 
 import polars as pl
@@ -128,3 +127,12 @@ class ServiceRequestExtractor:
                 continue
             counts[row["month"][:7]] = int(row["n"])
         return counts
+
+    @staticmethod
+    def month_bounds(month: str) -> tuple[str, str]:
+        """
+        First day of the month and of the next month, in the API's timestamp format.
+        """
+        year, mon = int(month[:4]), int(month[5:7])
+        nxt = date(year + (mon == 12), mon % 12 + 1, 1)
+        return f"{month}-01T00:00:00", f"{nxt:%Y-%m}-01T00:00:00"
