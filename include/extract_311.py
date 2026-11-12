@@ -1,0 +1,89 @@
+'''
+Extract Calgary 311 services-and-requests in montly chunks as raw parquet files to be stored into an AWS S3 bucket.
+
+1. Asks the API to count how many rows each month has.
+2. For each month, fetches the rows page by page and writes it into raw/311/YYYY-MM.parquet.
+3. Checks each month's fetched row count against the API count and logs the result.
+
+Re-running is allowed, since the months that already match their expected count are cached and skipped.
+The current month is always refetched because the data changes daily.
+
+To use:
+    from extract_311 import ServiceRequestExtractor
+    ServiceRequestExtractor().run('2020-01')    # Runs a single month (for testing)
+    ServiceRequestExtractor().run()             # Runs all months from 2012-01 to current month (the backfill)
+    ServiceRequestExtractor.run_incremental()   # Rows changed since the last load (runs daily)
+    ServiceRequestExtractor().upload_to_s3()    # copy raw files to S3 (needs boto3 and AWS keys)
+
+For upload_to_s3: set S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_DEFAULT_REGION (see: .env.example)
+'''
+
+from __future__ import annotations
+
+import csv
+import os
+import time
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+
+import polars as pl
+import requests
+
+class ServiceRequestExtractor:
+    DATASET_ID = 'iahh-g8bj' # This is a public id.
+    PAGE_SIZE = 50_000 # Maximum allowed rows to extract per page.
+    PAUSE_SECONDS = 0.2 # Allow rest time for the API so as to not surpass the rate limit.
+    MAX_RETRIES = 5 
+    OVERLAP_DAYS = 3 # re-read this many days before the last load, since dates have no time of day.
+    TIMEOUT_SECONDS = 120
+    RETRY_STATUSES = (429, 500, 502, 503, 504)
+    COLUMNS = [
+        "service_request_id", "requested_date", "updated_date", "closed_date",
+        "status_description", "source", "service_name", "agency_responsible",
+        "comm_code", "comm_name", "location_type", "longitude", "latitude"
+    ]
+    SERVICE_REQUEST_SCHEMA = {
+        "service_request_id": pl.String,
+        "requested_date": pl.String,
+        "updated_date": pl.String,
+        "closed_date": pl.String,
+        "status_description": pl.String,
+        "source": pl.String,
+        "service_name": pl.String,
+        "agency_responsible": pl.String,
+        "comm_code": pl.String,
+        "comm_name": pl.String,
+        "location_type": pl.String,
+        "longitude": pl.Float64,
+        "latitude": pl.Float64,
+    }
+    MANIFEST_FIELDS = ["month", "expected", "fetched", "status", "at"]
+
+    def __init__(self, out_dir: str | Path = "raw/311", app_token: str | None = None) -> None:
+        self.base_url = f"https://data.calgary.ca/resource/{self.DATASET_ID}.json"
+        self.out_dir = Path(out_dir)
+        self.manifest_path = self.out_dir / "_manifest.csv"
+        token = app_token or os.environ.get("SODA_APP_TOKEN")
+        self.headers = {"X-App-Token": token} if token else {}
+
+    # -------- API -----------------------------------------------------------
+
+    def _get(self, params: dict) -> list[dict]:
+        '''
+        HTTP GET, with retries on rate limits and server errors. Every retry will print the API's status description on status code 4xx.
+        '''     
+        for attempt in range(self.MAX_RETRIES):
+            r = requests.get(
+                self.base_url, params=params, headers=self.headers, timeout=self.TIMEOUT_SECONDS
+            )
+            if r.status_code in self.RETRY_STATUSES:
+                wait = 2 ** attempt
+                print(f"    HTTP {r.status_code}, retrying in {wait}s")
+                time.sleep(wait)
+                continue
+            if not r.ok:
+                print(r.status_code, r.text)
+            r.raise_for_status()
+            return r.json()
+        raise RuntimeError(f"Gave up after {self.MAX_RETRIES} attempts: {params}")
+    

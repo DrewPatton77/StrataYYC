@@ -7,7 +7,12 @@ authors = [
     { name = "LilyFae", email = "andrew.patton@ucalgary.ca" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "polars==2.1.0",
+    "pyarrow==26.0.1",
+    "pytest==9.2.0",
+    "requests==2.32.4",
+]
 
 [project.scripts]
 stratayyc = "stratayyc:main"
@@ -15,3 +20,6 @@ stratayyc = "stratayyc:main"
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
 build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+pythonpath = [".", "include"]
