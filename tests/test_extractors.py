@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import polars as pl
 import pytest
 import requests
 
@@ -183,3 +184,95 @@ def test_month_bounds_invalid_format_raises_value_error():
     """Verifies non-numeric month strings raise a ValueError."""
     with pytest.raises(ValueError):
         ServiceRequestExtractor.month_bounds("invalid")
+
+
+# ----- _fetch_where() method ----------------------------------------------------
+
+
+def _make_sample_row(req_id: str) -> dict[str, str | None]:
+    """Helper to build a complete API row matching ServiceRequestExtractor.COLUMNS."""
+    return {
+        "service_request_id": req_id,
+        "requested_date": "2020-01-01T00:00:00.000",
+        "updated_date": "2020-01-14T00:00:00.000",
+        "closed_date": None,
+        "status_description": "Closed",
+        "source": "Web",
+        "service_name": "Parks - Wildlife Sightings",
+        "agency_responsible": "CS - Calgary Parks",
+        "comm_code": "WSP",
+        "comm_name": "WEST SPRINGS",
+        "location_type": "Community Centrepoint",
+        "longitude": "-114.20616821197828",
+        "latitude": "51.05971960915254",
+    }
+
+
+def test_fetch_where_single_page_parses_schema_and_dates(extractor):
+    """Verifies a single batch is converted to a Polars DataFrame with parsed datetimes."""
+    sample_rows = [_make_sample_row("20-00000001"), _make_sample_row("20-00000002")]
+
+    with patch.object(extractor, "_get", return_value=sample_rows) as mock_get:
+        df = extractor._fetch_where("requested_date >= '2020-01-01T00:00:00'")
+
+    assert isinstance(df, pl.DataFrame)
+    assert len(df) == 2
+    assert df.schema["requested_date"] == pl.Datetime("ms")
+    assert df.schema["updated_date"] == pl.Datetime("ms")
+    assert df.schema["closed_date"] == pl.Datetime("ms")
+    assert df["closed_date"].null_count() == 2
+    assert "_ingested_at" in df.columns
+    mock_get.assert_called_once()
+
+
+def test_fetch_where_paginates_across_multiple_batches(extractor):
+    """Verifies _fetch_where loops with increasing $offset until a partial page returns."""
+    extractor.PAGE_SIZE = 2
+    page_1 = [_make_sample_row("20-00000001"), _make_sample_row("20-00000002")]
+    page_2 = [_make_sample_row("20-00000003")]
+
+    with (
+        patch.object(extractor, "_get", side_effect=[page_1, page_2]) as mock_get,
+        patch("include.extract_311.time.sleep") as mock_sleep,
+    ):
+        df = extractor._fetch_where("1=1")
+
+    assert len(df) == 3
+    assert df["service_request_id"].to_list() == [
+        "20-00000001",
+        "20-00000002",
+        "20-00000003",
+    ]
+    assert mock_get.call_count == 2
+    assert mock_get.call_args_list[0][0][0]["$offset"] == 0
+    assert mock_get.call_args_list[1][0][0]["$offset"] == 2
+    mock_sleep.assert_called_once_with(extractor.PAUSE_SECONDS)
+
+
+def test_fetch_where_empty_response_returns_empty_dataframe(extractor):
+    """Verifies an empty API result returns a 0-row DataFrame with the expected columns."""
+    with patch.object(extractor, "_get", return_value=[]):
+        df = extractor._fetch_where("1=0")
+
+    assert isinstance(df, pl.DataFrame)
+    assert len(df) == 0
+    assert "_ingested_at" in df.columns
+    assert "service_request_id" in df.columns
+
+
+# --- fetch_month() method -------------------------------------------------------------
+
+
+def test_fetch_month_builds_correct_where_clause(extractor):
+    """Verifies fetch_month passes the expected timestamp range to _fetch_where."""
+    expected_df = pl.DataFrame({"service_request_id": ["20-00000001"]})
+
+    with patch.object(
+        extractor, "_fetch_where", return_value=expected_df
+    ) as mock_fetch:
+        result = extractor.fetch_month("2020-12")
+
+    assert result.equals(expected_df)
+    mock_fetch.assert_called_once_with(
+        "requested_date >= '2020-12-01T00:00:00' AND requested_date < '2021-01-01T00:00:00'"
+    )

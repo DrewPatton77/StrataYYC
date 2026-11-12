@@ -23,7 +23,7 @@ from __future__ import annotations
 # import csv
 import os
 import time
-from datetime import date  # , datetime, timedelta, timezone
+from datetime import UTC, date, datetime  # timezone   #timedelta, timezone
 from pathlib import Path
 from typing import ClassVar
 
@@ -136,3 +136,53 @@ class ServiceRequestExtractor:
         year, mon = int(month[:4]), int(month[5:7])
         nxt = date(year + (mon == 12), mon % 12 + 1, 1)
         return f"{month}-01T00:00:00", f"{nxt:%Y-%m}-01T00:00:00"
+
+    def _fetch_where(self, where: str) -> pl.DataFrame:
+        """
+        Page through every row that matches a $where filter.
+        """
+        rows, offset = [], 0
+        while True:
+            batch = self._get(
+                {
+                    "$select": ", ".join(self.COLUMNS),
+                    "$where": where,
+                    "$order": "service_request_id",
+                    "$limit": self.PAGE_SIZE,
+                    "$offset": offset,
+                }
+            )
+            rows.extend(batch)
+            if len(batch) < self.PAGE_SIZE:
+                print(
+                    f"Batch size is greater than the number of allowed extracted rows: {self.PAGE_SIZE}."
+                )
+                break
+            offset += self.PAGE_SIZE
+            time.sleep(self.PAUSE_SECONDS)
+        df = pl.from_dicts(rows, schema=self.SERVICE_REQUEST_SCHEMA)
+        df = df.with_columns(
+            [
+                pl.col("requested_date").str.to_datetime(
+                    "%Y-%m-%dT%H:%M:%S%.3f", strict=False
+                ),
+                pl.col("updated_date").str.to_datetime(
+                    "%Y-%m-%dT%H:%M:%S%.3f", strict=False
+                ),
+                pl.col("closed_date").str.to_datetime(
+                    "%Y-%m-%dT%H:%M:%S%.3f", strict=False
+                ),
+            ]
+        )
+        return df.with_columns(
+            pl.lit(datetime.now(UTC).isoformat()).alias("_ingested_at")
+        )
+
+    def fetch_month(self, month: str) -> pl.DataFrame:
+        """
+        Fetches the rows that match the month.
+        """
+        start, end = self.month_bounds(month)
+        return self._fetch_where(
+            f"requested_date >= '{start}' AND requested_date < '{end}'"
+        )
