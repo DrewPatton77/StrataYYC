@@ -12,7 +12,9 @@ def extractor(tmp_path):
     """Creates a ServiceRequestExtractor instance using a temporary directory."""
     return ServiceRequestExtractor(out_dir=tmp_path, app_token="test-token-123")
 
+
 # ---- _get() method --------------------------------------------------
+
 
 def _mock_response(status_code: int, json_data=None, text: str = "") -> MagicMock:
     """Helper to build a mock requests.Response object."""
@@ -104,7 +106,9 @@ def test_get_raises_immediately_on_non_retryable_client_error(
     captured = capsys.readouterr()
     assert "400 Malformed SoQL query" in captured.out
 
+
 # ---- monthly_counts() method -----------------------------------------------
+
 
 def test_monthly_counts_returns_formatted_dict(extractor):
     """Verifies valid API rows are parsed into a {'YYYY-MM': int} dictionary."""
