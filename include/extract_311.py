@@ -210,3 +210,35 @@ class ServiceRequestExtractor:
             if is_new:
                 writer.writeheader()
             writer.writerow(row)
+
+    # ---- run ------------------------------------------------------------
+
+    def run(self, months: list[str] | None = None) -> None:
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        counts = self.monthly_counts()
+        print(f"{len(counts)} months, {sum(counts.values()):,} rows in total")
+        for m, n in list(counts.items())[:3] + list(counts.items())[-3:]:
+            print(f"    {m}: {n:,}")
+
+        for month in months or list(counts):
+            expected = counts.get(month)
+            if expected is None:
+                print(f"{month}: not in the API counts, skipping")
+                continue
+            if self._already_done(month, expected):
+                print(f"{month}: already complete ({expected:,} rows)")
+                continue
+            df = self.fetch_month(month)
+            df.write_parquet(self._path(month))
+            status = "ok" if df.height == expected else "COUNT MISMATCH"
+            print(f"{month}: fetched {df.height:,} of {expected:,} expected - {status}")
+            self._append_manifest(
+                {
+                    "month": month,
+                    "expected": expected,
+                    "fetched": df.height,
+                    "status": status,
+                    "at": datetime.now(UTC).isoformat(),
+                }
+            )
+            time.sleep(self.PAUSE_SECONDS)

@@ -340,3 +340,85 @@ def test_append_manifest_creates_header_and_appends_rows(extractor, tmp_path):
     assert len(rows) == 2
     assert rows[0] == row_1
     assert rows[1] == row_2
+
+
+# --- run() method ---------------------------------------------------------------------
+
+
+def test_run_fetches_all_months_and_writes_parquet_and_manifest(extractor, tmp_path):
+    """Verifies run() fetches all months when months=None, saves Parquet files, and logs 'ok'."""
+    extractor.out_dir = tmp_path / "raw" / "311"
+    extractor.manifest_path = extractor.out_dir / "_manifest.csv"
+
+    sample_df = pl.DataFrame({"service_request_id": ["20-00000001", "20-00000002"]})
+
+    with (
+        patch.object(
+            extractor, "monthly_counts", return_value={"2020-01": 2, "2020-02": 2}
+        ),
+        patch.object(extractor, "_already_done", return_value=False),
+        patch.object(extractor, "fetch_month", return_value=sample_df) as mock_fetch,
+        patch.object(extractor, "_append_manifest") as mock_manifest,
+        patch("include.extract_311.time.sleep") as mock_sleep,
+    ):
+        extractor.run()
+
+    assert extractor.out_dir.exists()
+    assert (extractor.out_dir / "2020-01.parquet").exists()
+    assert (extractor.out_dir / "2020-02.parquet").exists()
+    assert mock_fetch.call_count == 2
+    assert mock_manifest.call_count == 2
+    assert mock_sleep.call_count == 2
+
+    logged_row = mock_manifest.call_args_list[0][0][0]
+    assert logged_row["month"] == "2020-01"
+    assert logged_row["expected"] == 2
+    assert logged_row["fetched"] == 2
+    assert logged_row["status"] == "ok"
+    assert "at" in logged_row
+
+
+def test_run_skips_missing_and_already_done_months(extractor, tmp_path, capsys):
+    """Verifies run() skips months missing from API counts or already marked complete."""
+    extractor.out_dir = tmp_path
+
+    with (
+        patch.object(extractor, "monthly_counts", return_value={"2020-01": 10}),
+        patch.object(extractor, "_already_done", return_value=True),
+        patch.object(extractor, "fetch_month") as mock_fetch,
+        patch.object(extractor, "_append_manifest") as mock_manifest,
+    ):
+        extractor.run(months=["1999-01", "2020-01"])
+
+    captured = capsys.readouterr()
+    assert "1999-01: not in the API counts, skipping" in captured.out
+    assert "2020-01: already complete (10 rows)" in captured.out
+    mock_fetch.assert_not_called()
+    mock_manifest.assert_not_called()
+
+
+def test_run_records_count_mismatch_when_fetched_differs_from_expected(
+    extractor, tmp_path, capsys
+):
+    """Verifies run() logs 'COUNT MISMATCH' when fetched row count does not match expected."""
+    extractor.out_dir = tmp_path
+
+    # API expected 5 rows, but fetch_month only returned 1 row
+    partial_df = pl.DataFrame({"service_request_id": ["20-00000001"]})
+
+    with (
+        patch.object(extractor, "monthly_counts", return_value={"2020-03": 5}),
+        patch.object(extractor, "_already_done", return_value=False),
+        patch.object(extractor, "fetch_month", return_value=partial_df),
+        patch.object(extractor, "_append_manifest") as mock_manifest,
+        patch("include.extract_311.time.sleep"),
+    ):
+        extractor.run(months=["2020-03"])
+
+    captured = capsys.readouterr()
+    assert "2020-03: fetched 1 of 5 expected - COUNT MISMATCH" in captured.out
+
+    logged_row = mock_manifest.call_args[0][0]
+    assert logged_row["status"] == "COUNT MISMATCH"
+    assert logged_row["expected"] == 5
+    assert logged_row["fetched"] == 1
