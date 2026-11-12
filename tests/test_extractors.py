@@ -1,3 +1,5 @@
+import csv
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 import polars as pl
@@ -276,3 +278,65 @@ def test_fetch_month_builds_correct_where_clause(extractor):
     mock_fetch.assert_called_once_with(
         "requested_date >= '2020-12-01T00:00:00' AND requested_date < '2021-01-01T00:00:00'"
     )
+
+
+# ----- _path() method -------------------------------------
+
+
+def test_path_returns_parquet_filepath(extractor, tmp_path):
+    """Verifies _path builds the expected <out_dir>/<month>.parquet Path object."""
+    extractor.out_dir = tmp_path
+    assert extractor._path("2020-01") == tmp_path / "2020-01.parquet"
+
+
+def test_already_done_returns_false_for_current_month(extractor, tmp_path):
+    """Verifies _already_done always returns False for the current active month."""
+    extractor.out_dir = tmp_path
+    current_month = f"{date.today():%Y-%m}"
+    file_path = tmp_path / f"{current_month}.parquet"
+
+    # Even if a valid file with the exact expected row count exists, current month must re-run
+    pl.DataFrame({"id": [1, 2, 3]}).write_parquet(file_path)
+
+    assert extractor._already_done(current_month, expected=3) is False
+
+
+def test_already_done_checks_parquet_row_count(extractor, tmp_path):
+    """Verifies _already_done returns True only when a past month's row count matches expected."""
+    extractor.out_dir = tmp_path
+    file_path = tmp_path / "2020-01.parquet"
+    pl.DataFrame({"id": [1, 2, 3]}).write_parquet(file_path)
+
+    assert extractor._already_done("2020-01", expected=3) is True
+    assert extractor._already_done("2020-01", expected=5) is False
+
+
+# ----- _already_done() method ------------------------------
+
+
+def test_already_done_returns_false_when_file_missing(extractor, tmp_path):
+    """Verifies _already_done returns False if the Parquet file does not exist."""
+    extractor.out_dir = tmp_path
+    assert extractor._already_done("2020-01", expected=100) is False
+
+
+# ----- _append_manifest() method --------------------------
+
+
+def test_append_manifest_creates_header_and_appends_rows(extractor, tmp_path):
+    """Verifies _append_manifest writes headers once and appends subsequent rows cleanly."""
+    extractor.manifest_path = tmp_path / "_manifest.csv"
+
+    # Build two valid rows matching whatever keys are defined in extractor.MANIFEST_FIELDS
+    row_1 = {field: f"val1_{field}" for field in extractor.MANIFEST_FIELDS}
+    row_2 = {field: f"val2_{field}" for field in extractor.MANIFEST_FIELDS}
+
+    extractor._append_manifest(row_1)
+    extractor._append_manifest(row_2)
+
+    with extractor.manifest_path.open("r", newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    assert len(rows) == 2
+    assert rows[0] == row_1
+    assert rows[1] == row_2

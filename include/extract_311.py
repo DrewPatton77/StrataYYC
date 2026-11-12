@@ -20,7 +20,7 @@ For upload_to_s3: set S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and A
 
 from __future__ import annotations
 
-# import csv
+import csv
 import os
 import time
 from datetime import UTC, date, datetime  # timezone   #timedelta, timezone
@@ -186,3 +186,27 @@ class ServiceRequestExtractor:
         return self._fetch_where(
             f"requested_date >= '{start}' AND requested_date < '{end}'"
         )
+
+    # ----- Storage ----------------------------------------------------
+
+    def _path(self, month: str) -> Path:
+        return self.out_dir / f"{month}.parquet"
+
+    def _already_done(self, month: str, expected: int) -> bool:
+        """
+        Check whether the specified month was already extracted AND matches the expected number rows.
+        """
+        path = self._path(month)
+        if (
+            month == f"{date.today():%Y-%m}" or not path.exists()
+        ):  # skip the months before current month.
+            return False
+        return pl.scan_parquet(path).select(pl.len()).collect().item() == expected
+
+    def _append_manifest(self, row: dict) -> None:
+        is_new = not self.manifest_path.exists()
+        with self.manifest_path.open("a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=self.MANIFEST_FIELDS)
+            if is_new:
+                writer.writeheader()
+            writer.writerow(row)
