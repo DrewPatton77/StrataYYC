@@ -20,7 +20,6 @@ For upload_to_s3: set S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and A
 
 from __future__ import annotations
 
-import csv
 import os
 import time
 from datetime import UTC, date, datetime, timedelta
@@ -28,19 +27,13 @@ from pathlib import Path
 from typing import ClassVar
 
 import polars as pl
-import requests
+from base_extractor import BaseExtractor
 
 
-class ServiceRequestExtractor:
+class ServiceRequestExtractor(BaseExtractor):
     DATASET_ID: str = "iahh-g8bj"  # This is a public id.
     PAGE_SIZE: int = 50_000  # Maximum allowed rows to extract per page.
-    PAUSE_SECONDS: float = (
-        0.2  # Allow rest time for the API so as to not surpass the rate limit.
-    )
-    MAX_RETRIES: int = 5
     OVERLAP_DAYS: int = 3  # re-read this many days before the last load, since dates have no time of day.
-    TIMEOUT_SECONDS: int = 120
-    RETRY_STATUSES: tuple = (429, 500, 502, 503, 504)
     COLUMNS: tuple[str] = (
         "service_request_id",
         "requested_date",
@@ -73,39 +66,19 @@ class ServiceRequestExtractor:
         "latitude": pl.Float64,
     }
     MANIFEST_FIELDS: tuple[str] = ("month", "expected", "fetched", "status", "at")
+    S3_PREFIX = "raw/311"
 
     def __init__(
-        self, out_dir: str | Path = "raw/311", app_token: str | None = None
+        self, out_dir: Path | None = None, app_token: str | None = None
     ) -> None:
-        self.base_url = f"https://data.calgary.ca/resource/{self.DATASET_ID}.json"
-        self.out_dir = Path(out_dir)
-        self.manifest_path = self.out_dir / "_manifest.csv"
         token = app_token or os.environ.get("SODA_APP_TOKEN")
-        self.headers = {"X-App-Token": token} if token else {}
+        super().__init__(
+            out_dir,
+            f"https://data.calgary.ca/resource/{self.DATASET_ID}.json",
+            {"X-App-Token"} if token else {},
+        )
 
     # -------- API -----------------------------------------------------------
-
-    def _get(self, params: dict) -> list[dict]:
-        """
-        HTTP GET, with retries on rate limits and server errors. Every retry will print the API's status description on status code 4xx.
-        """
-        for attempt in range(self.MAX_RETRIES):
-            r = requests.get(
-                self.base_url,
-                params=params,
-                headers=self.headers,
-                timeout=self.TIMEOUT_SECONDS,
-            )
-            if r.status_code in self.RETRY_STATUSES:
-                wait = 2**attempt
-                print(f"    HTTP {r.status_code}, retrying in {wait}s")
-                time.sleep(wait)
-                continue
-            if not r.ok:
-                print(r.status_code, r.text)
-            r.raise_for_status()
-            return r.json()
-        raise RuntimeError(f"Gave up after {self.MAX_RETRIES} attempts: {params}")
 
     def monthly_counts(self) -> dict[str, int]:
         """
@@ -208,14 +181,6 @@ class ServiceRequestExtractor:
         ):  # skip the months before current month.
             return False
         return pl.scan_parquet(path).select(pl.len()).collect().item() == expected
-
-    def _append_manifest(self, row: dict) -> None:
-        is_new = not self.manifest_path.exists()
-        with self.manifest_path.open("a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=self.MANIFEST_FIELDS)
-            if is_new:
-                writer.writeheader()
-            writer.writerow(row)
 
     # ---- run ------------------------------------------------------------
 
@@ -320,36 +285,3 @@ class ServiceRequestExtractor:
                 f"Incremental {label}: fetched {df.height:,} of {expected:,} rows"
             )
         return df.height
-
-    # --- Cloud Storage: AWS S3 Bucket -------------------------------------------------
-
-    def upload_to_s3(self, bucket: str | None = None, prefix: str = "raw/311") -> int:
-        """
-        Copy the raw files (and the manifest) to S3, keeping the same folder layout.
-
-        A file is uploaded when it is not in the bucket yet OR was written AFTER the date of the copy in the bucket,
-        so re-running only sends what is new or changed (today's incremental file, the current month and the manifest).
-
-        Returns the number of files uploaded.
-        """
-        import boto3
-        from botocore.exceptions import ClientError
-
-        bucket = bucket or os.environ["S3_BUCKET"]
-        s3 = boto3.client("s3")
-        uploaded = 0
-        for path in sorted(self.out_dir.rglob("*")):
-            if not path.is_file():
-                continue
-            key = f"{prefix}/{path.relative_to(self.out_dir).as_posix()}"
-            written = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
-            try:
-                if s3.head_object(Bucket=bucket, Key=key)["LastModified"] >= written:
-                    continue
-            except ClientError as e:
-                if e.response["Error"]["Code"] not in ("404", "NoSuchKey", "NotFound"):
-                    raise
-            s3.upload_file(str(path), bucket, key)
-            uploaded += 1
-        print(f"s3://{bucket}/{prefix}: uploaded {uploaded} file(s)")
-        return uploaded
