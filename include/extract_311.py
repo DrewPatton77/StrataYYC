@@ -320,3 +320,36 @@ class ServiceRequestExtractor:
                 f"Incremental {label}: fetched {df.height:,} of {expected:,} rows"
             )
         return df.height
+
+    # --- Cloud Storage: AWS S3 Bucket -------------------------------------------------
+
+    def upload_to_s3(self, bucket: str | None = None, prefix: str = "raw/311") -> int:
+        """
+        Copy the raw files (and the manifest) to S3, keeping the same folder layout.
+
+        A file is uploaded when it is not in the bucket yet OR was written AFTER the date of the copy in the bucket,
+        so re-running only sends what is new or changed (today's incremental file, the current month and the manifest).
+
+        Returns the number of files uploaded.
+        """
+        import boto3
+        from botocore.exceptions import ClientError
+
+        bucket = bucket or os.environ["S3_BUCKET"]
+        s3 = boto3.client("s3")
+        uploaded = 0
+        for path in sorted(self.out_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            key = f"{prefix}/{path.relative_to(self.out_dir).as_posix()}"
+            written = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+            try:
+                if s3.head_object(Bucket=bucket, Key=key)["LastModified"] >= written:
+                    continue
+            except ClientError as e:
+                if e.response["Error"]["Code"] not in ("404", "NoSuchKey", "NotFound"):
+                    raise
+            s3.upload_file(str(path), bucket, key)
+            uploaded += 1
+        print(f"s3://{bucket}/{prefix}: uploaded {uploaded} file(s)")
+        return uploaded

@@ -1,10 +1,11 @@
 import csv
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
 import requests
+from botocore.exceptions import ClientError
 
 # Adjust the import path to match your project structure
 from include.extract_311 import ServiceRequestExtractor
@@ -537,3 +538,110 @@ def test_run_incremental_strict_mode_raises_on_mismatch_after_writing(
     # Confirm the Parquet file and manifest were still written before raising
     assert (tmp_path / "incremental" / f"{today_label}.parquet").exists()
     assert mock_manifest.call_args[0][0]["status"] == "COUNT MISMATCH"
+
+
+# --- upload_to_s3() method ---------------------------------------
+
+
+def _make_client_error(code: str) -> ClientError:
+    """Helper to construct a botocore ClientError with a specific error code."""
+    return ClientError(
+        {"Error": {"Code": code, "Message": "Mocked S3 error"}},
+        "HeadObject",
+    )
+
+
+def test_upload_to_s3_uploads_new_files_preserving_folder_layout(
+    extractor, tmp_path, monkeypatch
+):
+    """Verifies files missing in S3 (404) are uploaded with nested paths preserved."""
+    extractor.out_dir = tmp_path
+    monkeypatch.setenv("S3_BUCKET", "test-calgary-bucket")
+
+    # Create a root file and a nested incremental file
+    root_file = tmp_path / "2020-01.parquet"
+    root_file.write_bytes(b"parquet-data")
+
+    inc_dir = tmp_path / "incremental"
+    inc_dir.mkdir()
+    inc_file = inc_dir / "2026-11-12.parquet"
+    inc_file.write_bytes(b"inc-data")
+
+    mock_s3 = MagicMock()
+    mock_s3.head_object.side_effect = _make_client_error("404")
+
+    with patch("boto3.client", return_value=mock_s3) as mock_boto_client:
+        uploaded = extractor.upload_to_s3()
+
+    assert uploaded == 2
+    mock_boto_client.assert_called_once_with("s3")
+    assert mock_s3.upload_file.call_count == 2
+    mock_s3.upload_file.assert_any_call(
+        str(root_file), "test-calgary-bucket", "raw/311/2020-01.parquet"
+    )
+    mock_s3.upload_file.assert_any_call(
+        str(inc_file),
+        "test-calgary-bucket",
+        "raw/311/incremental/2026-11-12.parquet",
+    )
+
+
+def test_upload_to_s3_skips_unchanged_and_uploads_newer_files(extractor, tmp_path):
+    """Verifies files older than S3 LastModified are skipped, while newer files are uploaded."""
+    extractor.out_dir = tmp_path
+
+    unchanged_file = tmp_path / "old.parquet"
+    unchanged_file.write_bytes(b"old")
+
+    modified_file = tmp_path / "new.parquet"
+    modified_file.write_bytes(b"new")
+
+    now = datetime.now(UTC)
+    future_s3_time = now + timedelta(hours=1)
+    past_s3_time = now - timedelta(hours=1)
+
+    def head_object_side_effect(Bucket, Key):
+        if Key.endswith("old.parquet"):
+            return {"LastModified": future_s3_time}
+        return {"LastModified": past_s3_time}
+
+    mock_s3 = MagicMock()
+    mock_s3.head_object.side_effect = head_object_side_effect
+
+    with patch("boto3.client", return_value=mock_s3):
+        uploaded = extractor.upload_to_s3(
+            bucket="explicit-bucket", prefix="custom/prefix"
+        )
+
+    assert uploaded == 1
+    mock_s3.upload_file.assert_called_once_with(
+        str(modified_file), "explicit-bucket", "custom/prefix/new.parquet"
+    )
+
+
+def test_upload_to_s3_reraises_non_404_client_errors(extractor, tmp_path):
+    """Verifies permission or server errors (like 403 AccessDenied) are raised immediately."""
+    extractor.out_dir = tmp_path
+    (tmp_path / "2020-01.parquet").write_bytes(b"data")
+
+    mock_s3 = MagicMock()
+    mock_s3.head_object.side_effect = _make_client_error("403")
+
+    with (
+        patch("boto3.client", return_value=mock_s3),
+        pytest.raises(ClientError),
+    ):
+        extractor.upload_to_s3(bucket="test-bucket")
+
+    mock_s3.upload_file.assert_not_called()
+
+
+def test_upload_to_s3_raises_key_error_when_bucket_missing(
+    extractor, tmp_path, monkeypatch
+):
+    """Verifies missing bucket argument and unset S3_BUCKET env var raises KeyError."""
+    extractor.out_dir = tmp_path
+    monkeypatch.delenv("S3_BUCKET", raising=False)
+
+    with pytest.raises(KeyError):
+        extractor.upload_to_s3()
