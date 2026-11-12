@@ -20,29 +20,33 @@ For upload_to_s3: set S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and A
 
 from __future__ import annotations
 
-import csv
+#import csv
 import os
 import time
-from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+
+#from datetime import date, datetime, timedelta, timezone
+from typing import ClassVar
 
 import polars as pl
 import requests
 
+
 class ServiceRequestExtractor:
-    DATASET_ID = 'iahh-g8bj' # This is a public id.
-    PAGE_SIZE = 50_000 # Maximum allowed rows to extract per page.
-    PAUSE_SECONDS = 0.2 # Allow rest time for the API so as to not surpass the rate limit.
-    MAX_RETRIES = 5 
-    OVERLAP_DAYS = 3 # re-read this many days before the last load, since dates have no time of day.
-    TIMEOUT_SECONDS = 120
-    RETRY_STATUSES = (429, 500, 502, 503, 504)
-    COLUMNS = [
+    DATASET_ID: str = 'iahh-g8bj' # This is a public id.
+    PAGE_SIZE: int = 50_000 # Maximum allowed rows to extract per page.
+    PAUSE_SECONDS: float = 0.2 # Allow rest time for the API so as to not surpass the rate limit.
+    MAX_RETRIES: int = 5 
+    OVERLAP_DAYS: int = 3 # re-read this many days before the last load, since dates have no time of day.
+    TIMEOUT_SECONDS: int = 120
+    RETRY_STATUSES: tuple = (429, 500, 502, 503, 504)
+    COLUMNS: tuple[str] = (
         "service_request_id", "requested_date", "updated_date", "closed_date",
         "status_description", "source", "service_name", "agency_responsible",
         "comm_code", "comm_name", "location_type", "longitude", "latitude"
-    ]
-    SERVICE_REQUEST_SCHEMA = {
+    )
+    # Consider putting this into init as a parameter.
+    SERVICE_REQUEST_SCHEMA: ClassVar[dict[str, pl.DataType]] = {
         "service_request_id": pl.String,
         "requested_date": pl.String,
         "updated_date": pl.String,
@@ -57,7 +61,7 @@ class ServiceRequestExtractor:
         "longitude": pl.Float64,
         "latitude": pl.Float64,
     }
-    MANIFEST_FIELDS = ["month", "expected", "fetched", "status", "at"]
+    MANIFEST_FIELDS: tuple[str] = ("month", "expected", "fetched", "status", "at")
 
     def __init__(self, out_dir: str | Path = "raw/311", app_token: str | None = None) -> None:
         self.base_url = f"https://data.calgary.ca/resource/{self.DATASET_ID}.json"
