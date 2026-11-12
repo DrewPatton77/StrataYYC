@@ -1,4 +1,4 @@
-'''
+"""
 Extract Calgary 311 services-and-requests in montly chunks as raw parquet files to be stored into an AWS S3 bucket.
 
 1. Asks the API to count how many rows each month has.
@@ -16,16 +16,16 @@ To use:
     ServiceRequestExtractor().upload_to_s3()    # copy raw files to S3 (needs boto3 and AWS keys)
 
 For upload_to_s3: set S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_DEFAULT_REGION (see: .env.example)
-'''
+"""
 
 from __future__ import annotations
 
-#import csv
+# import csv
 import os
 import time
 from pathlib import Path
 
-#from datetime import date, datetime, timedelta, timezone
+# from datetime import date, datetime, timedelta, timezone
 from typing import ClassVar
 
 import polars as pl
@@ -33,17 +33,29 @@ import requests
 
 
 class ServiceRequestExtractor:
-    DATASET_ID: str = 'iahh-g8bj' # This is a public id.
-    PAGE_SIZE: int = 50_000 # Maximum allowed rows to extract per page.
-    PAUSE_SECONDS: float = 0.2 # Allow rest time for the API so as to not surpass the rate limit.
-    MAX_RETRIES: int = 5 
-    OVERLAP_DAYS: int = 3 # re-read this many days before the last load, since dates have no time of day.
+    DATASET_ID: str = "iahh-g8bj"  # This is a public id.
+    PAGE_SIZE: int = 50_000  # Maximum allowed rows to extract per page.
+    PAUSE_SECONDS: float = (
+        0.2  # Allow rest time for the API so as to not surpass the rate limit.
+    )
+    MAX_RETRIES: int = 5
+    OVERLAP_DAYS: int = 3  # re-read this many days before the last load, since dates have no time of day.
     TIMEOUT_SECONDS: int = 120
     RETRY_STATUSES: tuple = (429, 500, 502, 503, 504)
     COLUMNS: tuple[str] = (
-        "service_request_id", "requested_date", "updated_date", "closed_date",
-        "status_description", "source", "service_name", "agency_responsible",
-        "comm_code", "comm_name", "location_type", "longitude", "latitude"
+        "service_request_id",
+        "requested_date",
+        "updated_date",
+        "closed_date",
+        "status_description",
+        "source",
+        "service_name",
+        "agency_responsible",
+        "comm_code",
+        "comm_name",
+        "location_type",
+        "longitude",
+        "latitude",
     )
     # Consider putting this into init as a parameter.
     SERVICE_REQUEST_SCHEMA: ClassVar[dict[str, pl.DataType]] = {
@@ -63,7 +75,9 @@ class ServiceRequestExtractor:
     }
     MANIFEST_FIELDS: tuple[str] = ("month", "expected", "fetched", "status", "at")
 
-    def __init__(self, out_dir: str | Path = "raw/311", app_token: str | None = None) -> None:
+    def __init__(
+        self, out_dir: str | Path = "raw/311", app_token: str | None = None
+    ) -> None:
         self.base_url = f"https://data.calgary.ca/resource/{self.DATASET_ID}.json"
         self.out_dir = Path(out_dir)
         self.manifest_path = self.out_dir / "_manifest.csv"
@@ -73,15 +87,18 @@ class ServiceRequestExtractor:
     # -------- API -----------------------------------------------------------
 
     def _get(self, params: dict) -> list[dict]:
-        '''
+        """
         HTTP GET, with retries on rate limits and server errors. Every retry will print the API's status description on status code 4xx.
-        '''     
+        """
         for attempt in range(self.MAX_RETRIES):
             r = requests.get(
-                self.base_url, params=params, headers=self.headers, timeout=self.TIMEOUT_SECONDS
+                self.base_url,
+                params=params,
+                headers=self.headers,
+                timeout=self.TIMEOUT_SECONDS,
             )
             if r.status_code in self.RETRY_STATUSES:
-                wait = 2 ** attempt
+                wait = 2**attempt
                 print(f"    HTTP {r.status_code}, retrying in {wait}s")
                 time.sleep(wait)
                 continue
@@ -90,4 +107,3 @@ class ServiceRequestExtractor:
             r.raise_for_status()
             return r.json()
         raise RuntimeError(f"Gave up after {self.MAX_RETRIES} attempts: {params}")
-    

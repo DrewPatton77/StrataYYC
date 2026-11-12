@@ -75,7 +75,9 @@ def test_get_exhausts_retries_and_raises_runtime_error(mock_get, mock_sleep, ext
     """Verifies RuntimeError is raised after MAX_RETRIES consecutive retryable failures."""
     mock_get.return_value = _mock_response(500, text="Internal Server Error")
 
-    with pytest.raises(RuntimeError, match=f"Gave up after {extractor.MAX_RETRIES} attempts"):
+    with pytest.raises(
+        RuntimeError, match=f"Gave up after {extractor.MAX_RETRIES} attempts"
+    ):
         extractor._get({"$limit": 50000})
 
     assert mock_get.call_count == extractor.MAX_RETRIES
@@ -84,7 +86,9 @@ def test_get_exhausts_retries_and_raises_runtime_error(mock_get, mock_sleep, ext
 
 @patch("extract_311.time.sleep")
 @patch("extract_311.requests.get")
-def test_get_raises_immediately_on_non_retryable_client_error(mock_get, mock_sleep, extractor, capsys):
+def test_get_raises_immediately_on_non_retryable_client_error(
+    mock_get, mock_sleep, extractor, capsys
+):
     """Verifies non-retryable 4xx errors (like 400 or 404) fail fast without retrying and log output."""
     mock_get.return_value = _mock_response(400, text="Malformed SoQL query")
 
