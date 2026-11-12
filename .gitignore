@@ -10,3 +10,6 @@ wheels/
 .venv
 .env
 dbt/.dbt
+
+# Other
+.DS_Store
