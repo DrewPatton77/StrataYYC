@@ -12,6 +12,7 @@ def extractor(tmp_path):
     """Creates a ServiceRequestExtractor instance using a temporary directory."""
     return ServiceRequestExtractor(out_dir=tmp_path, app_token="test-token-123")
 
+# ---- _get() method --------------------------------------------------
 
 def _mock_response(status_code: int, json_data=None, text: str = "") -> MagicMock:
     """Helper to build a mock requests.Response object."""
@@ -102,3 +103,48 @@ def test_get_raises_immediately_on_non_retryable_client_error(
     # Verify it printed the status code and error text as documented
     captured = capsys.readouterr()
     assert "400 Malformed SoQL query" in captured.out
+
+# ---- monthly_counts() method -----------------------------------------------
+
+def test_monthly_counts_returns_formatted_dict(extractor):
+    """Verifies valid API rows are parsed into a {'YYYY-MM': int} dictionary."""
+    mock_rows = [
+        {"month": "2020-01-01T00:00:00.000", "n": "150"},
+        {"month": "2020-02-01T00:00:00.000", "n": "200"},
+    ]
+
+    with patch.object(extractor, "_get", return_value=mock_rows) as mock_get:
+        result = extractor.monthly_counts()
+
+    assert result == {"2020-01": 150, "2020-02": 200}
+    mock_get.assert_called_once_with(
+        {
+            "$select": "date_trunc_ym(requested_date) as month, count(*) as n",
+            "$group": "month",
+            "$order": "month",
+            "$limit": 5_000,
+        }
+    )
+
+
+def test_monthly_counts_skips_missing_month_and_warns(extractor, capsys):
+    """Verifies rows without a 'month' key are skipped and trigger a warning."""
+    mock_rows = [
+        {"n": "12"},
+        {"month": "2020-03-01T00:00:00.000", "n": "345"},
+    ]
+
+    with patch.object(extractor, "_get", return_value=mock_rows):
+        result = extractor.monthly_counts()
+
+    captured = capsys.readouterr()
+    assert result == {"2020-03": 345}
+    assert "Warning: 12 rows have no requested_date. Skipped." in captured.out
+
+
+def test_monthly_counts_empty_response(extractor):
+    """Verifies an empty API response returns an empty dictionary."""
+    with patch.object(extractor, "_get", return_value=[]):
+        result = extractor.monthly_counts()
+
+    assert result == {}

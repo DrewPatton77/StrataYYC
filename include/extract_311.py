@@ -107,3 +107,24 @@ class ServiceRequestExtractor:
             r.raise_for_status()
             return r.json()
         raise RuntimeError(f"Gave up after {self.MAX_RETRIES} attempts: {params}")
+
+    def monthly_counts(self) -> dict[str, int]:
+        """
+        Return {'YYYY-MM': row_count} for every month, from one grouped query.
+        """
+
+        rows = self._get(
+            {
+                "$select": "date_trunc_ym(requested_date) as month, count(*) as n",
+                "$group": "month",
+                "$order": "month",
+                "$limit": 5_000,
+            }
+        )
+        counts = {}
+        for row in rows:
+            if "month" not in row:
+                print(f"Warning: {row.get('n')} rows have no requested_date. Skipped.")
+                continue
+            counts[row["month"][:7]] = int(row["n"])
+        return counts
