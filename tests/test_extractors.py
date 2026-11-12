@@ -1,5 +1,5 @@
 import csv
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import MagicMock, patch
 
 import polars as pl
@@ -422,3 +422,118 @@ def test_run_records_count_mismatch_when_fetched_differs_from_expected(
     assert logged_row["status"] == "COUNT MISMATCH"
     assert logged_row["expected"] == 5
     assert logged_row["fetched"] == 1
+
+
+# --- _count_where() method -------------------------------------
+def test_count_where_returns_integer_count(extractor):
+    """Verifies _count_where queries count(*) and casts the result to int."""
+    with patch.object(extractor, "_get", return_value=[{"n": "42"}]) as mock_get:
+        count = extractor._count_where("status_description = 'Open'")
+
+    assert count == 42
+    mock_get.assert_called_once_with(
+        {"$select": "count(*) as n", "$where": "status_description = 'Open'"}
+    )
+
+
+# --- _since() method ------------------------------------------
+def test_since_finds_latest_date_and_subtracts_overlap(extractor, tmp_path):
+    """Verifies _since scans nested Parquet files, finds the max date, and subtracts overlap."""
+    extractor.out_dir = tmp_path
+    sub_dir = tmp_path / "incremental"
+    sub_dir.mkdir(parents=True)
+
+    # Write a monthly file and an incremental file with a newer updated_date
+    pl.DataFrame(
+        {"updated_date": [datetime(2026, 11, 1, 10, 0), datetime(2026, 11, 5, 14, 30)]}
+    ).write_parquet(tmp_path / "2026-11.parquet")
+
+    pl.DataFrame({"updated_date": [datetime(2026, 11, 10, 8, 15)]}).write_parquet(
+        sub_dir / "2026-11-10.parquet"
+    )
+
+    result = extractor._since(overlap_days=3)
+    assert result == "2026-11-07T00:00:00"
+
+
+def test_since_raises_runtime_error_when_no_data_on_disk(extractor, tmp_path):
+    """Verifies _since raises RuntimeError if Parquet files exist but contain only null dates."""
+    extractor.out_dir = tmp_path
+    pl.DataFrame(
+        {"updated_date": pl.Series([None], dtype=pl.Datetime("ms"))}
+    ).write_parquet(tmp_path / "empty.parquet")
+
+    with pytest.raises(
+        RuntimeError, match="No raw data found. Run the monthly extract first"
+    ):
+        extractor._since(overlap_days=3)
+
+
+# ---- _changed_since() method -------------------------------------------------------
+
+
+def test_changed_since_builds_fallback_soql_filter():
+    """Verifies _changed_since builds the OR fallback chain across date columns."""
+    query = ServiceRequestExtractor._changed_since("2026-11-07T00:00:00")
+    assert "updated_date >= '2026-11-07T00:00:00'" in query
+    assert "OR (updated_date IS NULL AND closed_date >= '2026-11-07T00:00:00')" in query
+    assert (
+        "OR (updated_date IS NULL AND closed_date IS NULL AND requested_date >= '2026-11-07T00:00:00')"
+        in query
+    )
+
+
+# ---- run_incremental() method -----------------------------------------------------
+
+
+def test_run_incremental_writes_dated_parquet_and_manifest(extractor, tmp_path):
+    """Verifies run_incremental writes to incremental/YYYY-MM-DD.parquet and returns row count."""
+    extractor.out_dir = tmp_path
+    extractor.manifest_path = tmp_path / "_manifest.csv"
+
+    sample_df = pl.DataFrame({"service_request_id": ["26-00000001", "26-00000002"]})
+    today_label = f"{date.today():%Y-%m-%d}"
+
+    with (
+        patch.object(
+            extractor, "_since", return_value="2026-11-07T00:00:00"
+        ) as mock_since,
+        patch.object(extractor, "_count_where", return_value=2),
+        patch.object(extractor, "_fetch_where", return_value=sample_df),
+        patch.object(extractor, "_append_manifest") as mock_manifest,
+    ):
+        fetched_count = extractor.run_incremental()
+
+    assert fetched_count == 2
+    mock_since.assert_called_once_with(extractor.OVERLAP_DAYS)
+
+    expected_file = tmp_path / "incremental" / f"{today_label}.parquet"
+    assert expected_file.exists()
+
+    logged_row = mock_manifest.call_args[0][0]
+    assert logged_row["month"] == f"incremental:{today_label}"
+    assert logged_row["expected"] == 2
+    assert logged_row["fetched"] == 2
+    assert logged_row["status"] == "ok"
+
+
+def test_run_incremental_strict_mode_raises_on_mismatch_after_writing(
+    extractor, tmp_path
+):
+    """Verifies strict=True writes the file and manifest first, then raises RuntimeError on mismatch."""
+    extractor.out_dir = tmp_path
+    sample_df = pl.DataFrame({"service_request_id": ["26-00000001"]})
+    today_label = f"{date.today():%Y-%m-%d}"
+
+    with (
+        patch.object(extractor, "_since", return_value="2026-11-07T00:00:00"),
+        patch.object(extractor, "_count_where", return_value=5),
+        patch.object(extractor, "_fetch_where", return_value=sample_df),
+        patch.object(extractor, "_append_manifest") as mock_manifest,
+        pytest.raises(RuntimeError, match=f"Incremental {today_label}"),
+    ):
+        extractor.run_incremental(overlap_days=5, strict=True)
+
+    # Confirm the Parquet file and manifest were still written before raising
+    assert (tmp_path / "incremental" / f"{today_label}.parquet").exists()
+    assert mock_manifest.call_args[0][0]["status"] == "COUNT MISMATCH"

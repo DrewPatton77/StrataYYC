@@ -23,7 +23,7 @@ from __future__ import annotations
 import csv
 import os
 import time
-from datetime import UTC, date, datetime  # timezone   #timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import ClassVar
 
@@ -187,6 +187,12 @@ class ServiceRequestExtractor:
             f"requested_date >= '{start}' AND requested_date < '{end}'"
         )
 
+    def _count_where(self, where: str) -> int:
+        """
+        How many rows the API says match a $where filter.
+        """
+        return int(self._get({"$select": "count(*) as n", "$where": where})[0]["n"])
+
     # ----- Storage ----------------------------------------------------
 
     def _path(self, month: str) -> Path:
@@ -242,3 +248,75 @@ class ServiceRequestExtractor:
                 }
             )
             time.sleep(self.PAUSE_SECONDS)
+
+    # ---- Incremental (daily run for data streaming) -----------------------------------------------
+
+    def _since(self, overlap_days: int) -> str:
+        """
+        Latest updated_date already on disk, minus an overlap, as an API timestamp.
+        """
+        latest = (
+            pl.scan_parquet(str(self.out_dir / "**" / "*.parquet"))
+            .select(pl.col("updated_date").dt.date().max())
+            .collect()
+            .item()
+        )
+        if latest is None:
+            raise RuntimeError("No raw data found. Run the monthly extract first")
+        return f"{latest - timedelta(days=overlap_days):%Y-%m-%d}T00:00:00"
+
+    @staticmethod
+    def _changed_since(since: str) -> str:
+        """
+        Rows changed since a date: by updated_date, else closed_date, else requested_date
+        """
+        return (
+            f"updated_date >= '{since}'"
+            f" OR (updated_date IS NULL AND closed_date >= '{since}')"
+            f" OR (updated_date IS NULL AND closed_date IS NULL AND requested_date >= '{since}')"
+        )
+
+    def run_incremental(
+        self, overlap_days: int | None = None, strict: bool = False
+    ) -> int:
+        """
+        Fetch rows changed since the last load and store them as one dated file.
+
+        Files go to raw/311/incremental/YYYY-MM-DD.parquet. Running again on the same day overwrites that day's file.
+        The same request can appear in several files, so when merging downstream keep the latest version of each
+        service_request_id.
+        With strict=True, a count mismatch raises after the file and manifest are written, so a scheduler will mark
+        the run as failed and retries it.
+
+        Returns the number of rows fetched.
+        """
+        since = self._since(self.OVERLAP_DAYS if overlap_days is None else overlap_days)
+        where = self._changed_since(since)
+        expected = self._count_where(where)
+        df = self._fetch_where(where)
+
+        label = f"{date.today():%Y-%m-%d}"
+        path = self.out_dir / "incremental" / f"{label}.parquet"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        df.write_parquet(path)
+
+        status = "ok" if df.height == expected else "COUNT MISMATCH"
+        print(
+            f"incremental {label}: rows changed since {since[:10]}: "
+            f"fetched {df.height:,} of {expected:,} expected - {status}"
+        )
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        self._append_manifest(
+            {
+                "month": f"incremental:{label}",
+                "expected": expected,
+                "fetched": df.height,
+                "status": status,
+                "at": datetime.now(UTC).isoformat(),
+            }
+        )
+        if strict and status != "ok":
+            raise RuntimeError(
+                f"Incremental {label}: fetched {df.height:,} of {expected:,} rows"
+            )
+        return df.height
