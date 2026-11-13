@@ -5,10 +5,10 @@ Unit tests for the logic specific to each source.
 from datetime import date, datetime
 from unittest.mock import patch
 
-# import extract_weather
 import polars as pl
 import pytest
 
+import include.extract_weather
 from include.extract_311 import ServiceRequestExtractor
 
 
@@ -423,3 +423,50 @@ def test_run_incremental_strict_mode_raises_on_mismatch_after_writing(
     # Confirm the Parquet file and manifest were still written before raising
     assert (tmp_path / "incremental" / f"{today_label}.parquet").exists()
     assert mock_manifest.call_args[0][0]["status"] == "COUNT MISMATCH"
+
+
+# ---- weather: _fetch_range() -------------------------------------------------------------
+
+
+def test_weather_fetch_range_pages_through_results_and_cleans_columns(monkeypatch):
+    weather = include.extract_weather.CalgaryWeatherExtractor()
+    monkeypatch.setattr(weather, "PAGE_SIZE", 2)
+    pages = [
+        {
+            "numberMatched": 3,
+            "features": [
+                {
+                    "properties": {
+                        "LOCAL_DATE": "2026-01-01 00:00:00",
+                        "MEAN_TEMPERATURE": -1.5,
+                    }
+                },
+                {
+                    "properties": {
+                        "LOCAL_DATE": "2026-01-02 00:00:00",
+                        "MEAN_TEMPERATURE": None,
+                    }
+                },
+            ],
+        },
+        {
+            "features": [
+                {
+                    "properties": {
+                        "LOCAL_DATE": "2026-01-03 00:00:00",
+                        "MEAN_TEMPERATURE": 2,
+                    }
+                }
+            ]
+        },
+    ]
+    monkeypatch.setattr(weather, "_get", lambda params: pages.pop(0))
+    monkeypatch.setattr(include.extract_weather.time, "sleep", lambda s: None)
+    df, expected = weather._fetch_range(date(2026, 1, 1), date(2026, 1, 3))
+    assert expected == 3
+    assert df["local_date"].to_list() == [
+        date(2026, 1, 1),
+        date(2026, 1, 2),
+        date(2026, 1, 3),
+    ]
+    assert "_ingested_at" in df.columns
