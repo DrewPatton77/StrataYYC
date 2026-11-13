@@ -69,7 +69,7 @@ class ServiceRequestExtractor(BaseExtractor):
     S3_PREFIX = "raw/311"
 
     def __init__(
-        self, out_dir: str | Path = Path, app_token: str | None = None
+        self, out_dir: str | Path = "raw/311", app_token: str | None = None
     ) -> None:
         token = app_token or os.environ.get("SODA_APP_TOKEN")
         super().__init__(

@@ -13,3 +13,4 @@ dbt/.dbt
 
 # Other
 .DS_Store
+raw/

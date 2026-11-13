@@ -31,19 +31,26 @@ def _extractor(module: str, class_name: str, out_dir: str):
 
 
 @dag(
-    dag_id="calgary_311_daily",
+    dag_id="daily",
     schedule="0 12 * * *",  # 12:00 Calgary time; the portal updates arounf 11:02 to 11:13
     start_date=datetime(2026, 11, 1, tzinfo=ZoneInfo("America/Edmonton")),
     catchup=False,  # one run per day from now on. The monthly and yearly extracts did the history
     default_args={"retries": 2, "retry_delay": timedelta(minutes=10)},
-    tags=["calgary-311", "raw", "aws", "dbt"],
+    tags=["calgary-311", "raw", "aws"],
 )
 def daily():
     @task
     def extract_incremental() -> int:
+        # strict = True: a count mismatch fails the task, so Airflow retries it
+        return _extractor(
+            "extract_311", "ServiceRequestExtractor", RAW_DIR
+        ).run_incremental(strict=True)
+
+    @task
+    def upload_raw(_rows: int) -> int:
         # Bucket name and AWS keys come from the container's environment (see .env.example).
         extractor = _extractor("extract_311", "ServiceRequestExtractor", RAW_DIR)
-        return extractor.upload_to_s3(bucker=os.environ["S3_BUCKET"])
+        return extractor.upload_to_s3(bucket=os.environ["S3_BUCKET"])
 
     @task
     def extract_weather() -> int:
@@ -57,7 +64,11 @@ def daily():
         extractor = _extractor(
             "extract_weather", "CalgaryWeatherExtractor", WEATHER_DIR
         )
-        return extractor.upload_to_s3(bucker=os.environ["S3_BUCKET"])
+        return extractor.upload_to_s3(bucket=os.environ["S3_BUCKET"])
+
+    # Run each in parallel
+    upload_raw(extract_incremental())
+    upload_weather(extract_weather())
 
 
 daily()

@@ -121,7 +121,7 @@ class CalgaryWeatherExtractor(BaseExtractor):
                 date(year, 1, 1), min(date(year, 12, 31), today)
             )
             df.write_parquet(path)
-            self._log(str(year), df.heaight, expected)
+            self._log(str(year), df.height, expected)
             time.sleep(self.PAUSE_SECONDS)
 
     def run_incremental(
