@@ -21,7 +21,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS calgary_311.raw_service_requests(
     location_type      string,
     longitude          double,
     latitude           double,
-    `_ingested_at`     string,
+    `_ingested_at`     string
 )
 STORED AS PARQUET
 LOCATION 's3://calgary-services-and-requests-data-pipeline/raw/311/';
