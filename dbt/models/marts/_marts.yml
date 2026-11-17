@@ -1,0 +1,67 @@
+version: 2
+
+models:
+  - name: dim_date
+    columns:
+      - name: date_key
+        tests: [unique, not_null]
+  - name: dim_status
+    columns:
+      - name: status_key
+        tests: [unique, not_null]
+  - name: dim_channel
+    columns:
+      - name: channel_key
+        tests: [unique, not_null]
+  - name: dim_service
+    columns:
+      - name: service_key
+        tests: [unique, not_null]
+  - name: dim_agency
+    columns:
+      - name: agency_key
+        tests: [unique, not_null]
+  - name: dim_community
+    columns:
+      - name: community_key
+        tests: [unique, not_null]
+
+  - name: fct_service_requests
+    description: One row per service request; join to the dimensions on the *_key columns.
+    columns:
+      - name: service_request_id
+        tests: [unique, not_null]
+      - name: requested_date_key
+        tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_date'), field: date_key}
+      - name: closed_date_key
+        tests:
+          - relationships:
+              arguments: {to: ref('dim_date'), field: date_key}
+      - name: status_key
+        tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_status'), field: status_key}
+      - name: channel_key
+        tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_channel'), field: channel_key}
+      - name: service_key
+        tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_service'), field: service_key}
+      - name: agency_key
+        tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_agency'), field: agency_key}
+      - name: community_key
+        tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_community'), field: community_key}
