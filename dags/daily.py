@@ -36,7 +36,7 @@ def _extractor(module: str, class_name: str, out_dir: str):
     start_date=datetime(2026, 11, 1, tzinfo=ZoneInfo("America/Edmonton")),
     catchup=False,  # one run per day from now on. The monthly and yearly extracts did the history
     default_args={"retries": 2, "retry_delay": timedelta(minutes=10)},
-    tags=["calgary-311", "raw", "aws"],
+    tags=["calgary-311", "raw", "aws", "dbt"],
 )
 def daily():
     @task
@@ -66,9 +66,21 @@ def daily():
         )
         return extractor.upload_to_s3(bucket=os.environ["S3_BUCKET"])
 
-    # Run each in parallel
-    upload_raw(extract_incremental())
-    upload_weather(extract_weather())
+    @task.bash(retries=1, execution_timeout=timedelta(hours=1))
+    def dbt_build() -> str:
+        return (
+            "set -euo pipefail; "
+            "cd /opt/airflow/dbt && "
+            'AWS_ACCESS_KEY_ID="$DBT_AWS_ACCESS_KEY_ID" '
+            'AWS_SECRET_ACCESS_KEY="$DBT_AWS_SECRET_ACCESS_KEY" '
+            "/home/airflow/dbt-venv/bin/dbt build --profiles-dir .dbt"
+        )
+
+    # dbt waits for both uplaods, runs each extract and upload in parallel
+    [
+        upload_raw(extract_incremental()),
+        upload_weather(extract_weather()),
+    ] >> dbt_build()
 
 
 daily()
