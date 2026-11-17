@@ -1,0 +1,12 @@
+version: 2
+
+models:
+  - name: stg_weather_daily
+    description: >
+      One row per day of Calgary International Airport weather (latest landed version).
+      Data starts on 2012-07-12. has_observations is false on days with every measure null.
+    columns:
+      - name: local_date
+        tests:
+          - unique
+          - not_null

@@ -1,0 +1,19 @@
+version: 2
+
+sources:
+  - name: raw_weather
+    description: >
+      Daily weather for Calgary International Airport from the ECCC climate-daily API: yearly
+      files plus daily incremental files in one Athena table. A date can appear in several files.
+    database: awsdatacatalog
+    schema: calgary_311
+    tables:
+      - name: raw_weather_daily
+        loaded_at_field: "from_iso8601_timestamp(_ingested_at)"
+        freshness:
+          warn_after: {count: 2, period: day}
+          error_after: {count: 5, period: day}
+        columns:
+          - name: local_date
+            tests:
+              - not_null

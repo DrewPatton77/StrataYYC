@@ -1,0 +1,83 @@
+version: 2
+
+models:
+  - name: base_service_requests
+    description: >
+      First pass over the raw 311 table: one row per request (latest landed version, without
+      TO BE DELETED), text trimmed, placeholders turned into null, and service names cleaned up
+      to the point where spelling variants can be compared.
+    columns:
+      - name: service_request_id
+        tests: [unique, not_null]
+
+  - name: service_name_map
+    description: >
+      Maps each spelling variant of a service name to its most common spelling. Computed from
+      the data on every run and only variants that differ from their canonical name are listed.
+    columns:
+      - name: variant_name
+        tests: [unique, not_null]
+      - name: canonical_name
+        tests: [not_null]
+
+  - name: stg_service_requests
+    description: >
+      One row per 311 service request (latest landed version), typed and cleaned.
+      Excludes status "TO BE DELETED". status_description decides is_closed.
+      Placeholder text (N/A, null, None) is null. Built from base_service_requests and the cleaning
+      rules are documented in the exploration notebook.
+    columns:
+      - name: service_request_id
+        description: Primary key.
+        tests:
+          - unique
+          - not_null
+      - name: requested_date
+        description: Day grain. Data is complete from 2012-01-01; 2010 and 2011 hold only 128 requests.
+        tests:
+          - not_null
+      - name: status_description
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["Closed", "Open", "Duplicate (Closed)", "Duplicate (Open)"]
+      - name: channel
+        description: >
+          Source of the request. Not comparable across years: Web became Other in March 2021
+          and Phone faded into Other from 2022 to 2025.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["Phone", "Web", "Other", "App"]
+      - name: channel_group
+        description: App or Other channels. The reliable split across all years.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["App", "Other channels"]
+      - name: is_channel_detail_reliable
+        description: True before 2021-03-01, when the Phone, Web and Other split is trustworthy.
+      - name: service_name
+        description: >
+          Cleaned service name with the retired "z" marker removed and spelling variants mapped to
+          one form. Null when the source says N/A.
+      - name: service_group
+        description: service_name before the first " - "; names without one are their own group.
+      - name: is_legacy_service
+        description: >
+          The request was logged under a retired name: a z marker, or OLD, DO NOT USE or INTERNAL.
+      - name: location_type
+        description: The text "None" in the raw data is converted to null.
+      - name: is_unnamed_area
+        description: True when the community name is a numeric area code such as 01H, not a neighbourhood.
+      - name: has_status_date_conflict
+        description: True when a closed request has no closed date, or an open request has one.
+      - name: days_to_close
+        description: Whole days from requested to closed; null unless closed with a valid closed date.
+      - name: is_bulk_closure
+        description: >
+          Closed in a backlog cleanup (a batch of long-open requests closed on one day), so its
+          time to close does not reflect the work. Exclude from time-to-close averages.
+        tests:
+          - not_null

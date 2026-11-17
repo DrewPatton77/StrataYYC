@@ -1,0 +1,29 @@
+version: 2
+
+sources:
+  - name: raw_311
+    description: >
+      Raw Calgary 311 service requests stored by the Airflow pipeline: monthly files plus daily
+      incremental files, all in one Athena table. The same request can appear in several files.
+    database: awsdatacatalog
+    schema: calgary_311
+    tables:
+      - name: raw_service_requests
+        loaded_at_field: "from_iso8601_timestamp(_ingested_at)"
+        freshness:
+          warn_after: {count: 2, period: day}
+          error_after: {count: 5, period: day}
+        columns:
+          - name: service_request_id
+            tests:
+              - not_null
+          - name: status_description
+            tests:
+              - accepted_values:
+                  arguments:
+                    values: ["Closed", "Open", "Duplicate (Closed)", "Duplicate (Open)", "TO BE DELETED"]
+          - name: source
+            tests:
+              - accepted_values:
+                  arguments:
+                    values: ["Phone", "Web", "Other", "App"]
