@@ -34,4 +34,4 @@ jobs:
         working-directory: ./dbt
         run: |
           uv run dbt deps
-          uv run dbt parse --profiles-dir .
+          uv run dbt parse --profiles-dir dbt --profiles-dir dbt/ci
