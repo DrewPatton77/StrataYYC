@@ -30,14 +30,18 @@ jobs:
       - name: Run unit tests with pytest
         run: uv run pytest
 
-      - name: Parse dbt project
-        runs-on: ubuntu-latest
-        env:
-          AWS_ACCESS_KEY_ID: placeholder
-          AWS_SECRET_ACCESS_KEY: placeholder
-          AWS_DEFAULT_REGION: ca-west-1
-        steps:
-          - uses: actions/checkout@v4
-          - uses: astral-sh/setup-uv@5
-          - run: uv sync
-          - run: uv run dbt parse --project-dir dbt --profiles-dir dbt/ci
+  dbt:
+    name: dbt project parses
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: placeholder
+      AWS_SECRET_ACCESS_KEY: placeholder
+      AWS_DEFAULT_REGION: ca-west-1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-groups
+      - run: uv run dbt parse --project-dir dbt --profiles-dir dbt/ci
+
