@@ -21,3 +21,4 @@ dbt/dbt_packages/
 dbt/target/
 .pytest_cache/
 .ruff_cache/
+logs
