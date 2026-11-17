@@ -30,9 +30,8 @@ jobs:
       - name: Run unit tests with pytest
         run: uv run pytest
 
-      # --- Uncomment when ready for dbt ---
-      # - name: Parse dbt project
-      #   working-directory: ./dbt
-      #   run: |
-      #     uv run dbt deps
-      #     uv run dbt parse --profiles-dir .
+      - name: Parse dbt project
+        working-directory: ./dbt
+        run: |
+          uv run dbt deps
+          uv run dbt parse --profiles-dir .
