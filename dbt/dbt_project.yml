@@ -1,0 +1,29 @@
+name: calgary_311
+version: "1.0.0"
+config-version: 2
+profile: calgary_311
+
+model-paths: ["models"]
+test-paths: ["tests"]
+
+clean-targets: ["target", "dbt_packages"]
+
+# A bulk closure is a batch of long-open requests closed together (a backlog cleanup):
+# a closed date and service group with at least this many closures and a median age of at
+# least this many days. Only requests open that long are flagged. See notebook section 7.
+vars:
+  bulk_min_requests: 1000
+  bulk_min_median_days: 100
+
+# Objects are stored in <profile schema>_<folder schema>, e.g. calgary_311_dbt_staging.
+models:
+  calgary_311:
+    intermediate:
+      +schema: intermediate
+      +materialized: table
+    staging:
+      +schema: staging
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table
