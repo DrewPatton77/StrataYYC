@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: agg_requests_monthly
+    description: >
+      Dashboard table: requests by month, service group, channel group and legacy flag. Months are
+      request months, so recent months show fewer closed requests.
+    columns:
+      - name: month_start
+        tests: [not_null]
+      - name: service_group
+        tests: [not_null]
+      - name: requests
+        tests: [not_null]
+
+  - name: agg_requests_community_yearly
+    description: >
+      Dashboard table for maps: requests by year, community and service group. Duplicates excluded;
+      unnamed areas have null coordinates.
+    columns:
+      - name: year_num
+        tests: [not_null]
+      - name: community_code
+        tests: [not_null]
+      - name: requests
+        tests: [not_null]

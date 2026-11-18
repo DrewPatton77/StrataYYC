@@ -22,3 +22,4 @@ dbt/target/
 .pytest_cache/
 .ruff_cache/
 logs
+exports/

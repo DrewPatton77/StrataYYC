@@ -22,6 +22,7 @@ services:
     volumes:
       - ./dags:/opt/airflow/dags
       - ./include:/opt/airflow/include
+      - ./exports:/opt/airflow/exports
       - ./raw:/opt/airflow/raw
       - ./dbt:/opt/airflow/dbt
       - airflow-state:/opt/airflow/state
