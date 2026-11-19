@@ -19,6 +19,7 @@ services:
       AWS_DEFAULT_REGION: "${AWS_DEFAULT_REGION:-ca-west-1}"
       DBT_AWS_ACCESS_KEY_ID: "${DBT_AWS_ACCESS_KEY_ID:-}"
       DBT_AWS_SECRET_ACCESS_KEY: "${DBT_AWS_SECRET_ACCESS_KEY:-}"
+      STRATAYYC_DBT: /home/airflow/dbt-venv/bin/dbt
     volumes:
       - ./dags:/opt/airflow/dags
       - ./include:/opt/airflow/include
@@ -26,6 +27,8 @@ services:
       - ./raw:/opt/airflow/raw
       - ./dbt:/opt/airflow/dbt
       - airflow-state:/opt/airflow/state
+      - ./src:/opt/airflow/src
+      - ./pipeline.yml:/opt/airflow/pipeline.yml
 
 volumes:
   airflow-state:

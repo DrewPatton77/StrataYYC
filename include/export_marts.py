@@ -4,6 +4,7 @@ Each table is queried with Athena and the result CSV (which has a header row) is
 file name, both locally and under s3://<bucket>/exports/. A table that returns no rows is an error,
 so a bad run never overwrites the last good file.
 """
+
 import os
 import time
 from pathlib import Path
@@ -33,12 +34,18 @@ def dbt_session() -> boto3.Session:
     )
 
 
-def _run_query(athena, sql: str, workgroup: str, timeout: float = 900, poll: float = 2) -> str:
+def _run_query(
+    athena, sql: str, workgroup: str, timeout: float = 900, poll: float = 2
+) -> str:
     """Run a query and return the S3 location of its CSV result."""
-    query_id = athena.start_query_execution(QueryString=sql, WorkGroup=workgroup)["QueryExecutionId"]
+    query_id = athena.start_query_execution(QueryString=sql, WorkGroup=workgroup)[
+        "QueryExecutionId"
+    ]
     deadline = time.monotonic() + timeout
     while True:
-        execution = athena.get_query_execution(QueryExecutionId=query_id)["QueryExecution"]
+        execution = athena.get_query_execution(QueryExecutionId=query_id)[
+            "QueryExecution"
+        ]
         state = execution["Status"]["State"]
         if state == "SUCCEEDED":
             return execution["ResultConfiguration"]["OutputLocation"]
@@ -47,7 +54,9 @@ def _run_query(athena, sql: str, workgroup: str, timeout: float = 900, poll: flo
             raise RuntimeError(f"Athena query {state.lower()}: {reason}")
         if time.monotonic() > deadline:
             athena.stop_query_execution(QueryExecutionId=query_id)
-            raise TimeoutError(f"Athena query {query_id} did not finish in {timeout:.0f} seconds")
+            raise TimeoutError(
+                f"Athena query {query_id} did not finish in {timeout:.0f} seconds"
+            )
         time.sleep(poll)
 
 
@@ -75,7 +84,9 @@ def export_tables(
 
     rows_written = {}
     for table in tables:
-        result_uri = _run_query(athena, f'select * from "{database}"."{table}"', workgroup, poll=poll)
+        result_uri = _run_query(
+            athena, f'select * from "{database}"."{table}"', workgroup, poll=poll
+        )
         result_bucket, result_key = _split_s3_uri(result_uri)
 
         # Download to a temporary name first, so a half-written or empty file never replaces a good one.

@@ -48,10 +48,13 @@ def upload(source: Source, root: Path) -> int:
 
 
 def run_dbt(cfg: Config, command: str = "build", extra: tuple[str, ...] = ()) -> None:
-    """dbt uses its own IAM user, so DBT_AWS_* is renamed to AWS_* for this one command."""
-    exe = shutil.which("dbt")
+    """dbt uses its own IAM user, so DBT_AWS_* is renamed to AWS_* for this one command.
+    STRATAYYC_DBT points at the dbt executable when it is not on PATH (the Airflow image keeps it in a venv)."""
+    exe = os.environ.get("STRATAYYC_DBT") or shutil.which("dbt")
     if exe is None:
-        raise RuntimeError("dbt not found. Run through uv: 'uv run stratayyc dbt'")
+        raise RuntimeError(
+            "dbt not found. Run through uv: 'uv run stratayyc dbt', or set STRATAYYC_DBT"
+        )
     env = dict(os.environ)
     for suffix in ("ACCESS_KEY_ID", "SECRET_ACCESS_KEY"):
         if os.environ.get(f"DBT_AWS_{suffix}"):

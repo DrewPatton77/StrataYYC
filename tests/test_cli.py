@@ -94,3 +94,16 @@ def test_backfill_passes_months_or_years(tmp_path, monkeypatch):
         only=("2020", "2022"),
     )
     assert seen["args"] == (2020, 2022)
+
+
+def test_run_dbt_uses_override_and_dbt_keys(cfg_path, monkeypatch):
+    captured = {}
+    monkeypatch.setenv("STRATAYYC_DBT", "/venv/bin/dbt")
+    monkeypatch.setenv("DBT_AWS_ACCESS_KEY_ID", "dbt-key")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "pipeline-key")
+    monkeypatch.setattr(
+        steps.subprocess, "run", lambda cmd, **k: captured.update(cmd=cmd, env=k["env"])
+    )
+    steps.run_dbt(load_config(cfg_path))
+    assert captured["cmd"][:2] == ["/venv/bin/dbt", "build"]
+    assert captured["env"]["AWS_ACCESS_KEY_ID"] == "dbt-key"
