@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: service_group_map
+    description: >
+      Maps each service group to a stable reporting group and a readable name, because the City renames
+      and merges groups over time. Groups not listed keep their own name.
+    columns:
+      - name: service_group
+        tests: [unique, not_null]
+      - name: reporting_group
+        tests: [not_null]
+      - name: reporting_group_name
+        tests: [not_null]
