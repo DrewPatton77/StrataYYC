@@ -1,4 +1,6 @@
--- One row per day from 2012-01-01 to today: 311 volumes joined to that day's weather.
+-- One row per day from 2012-01-01 to the latest day that has any requests: 311 volumes joined to that day's weather.
+-- Days after that have not been published yet, so they are left out instead of showing zero requests.
+-- The latest day can still be incomplete, because requests are added during the day.
 -- Data is complete from 2012-01-01. Days before the weather starts (2012-07-12) and days with
 -- no mean temperature have has_temperature = false and null weather values; days with no
 -- observations at all have has_weather = false.
@@ -43,4 +45,4 @@ SELECT
 FROM {{ ref('dim_date') }} d
 LEFT JOIN daily ON daily.date_key = d.date_key
 LEFT JOIN {{ ref('stg_weather_daily') }} w ON w.local_date = d.date_day
-WHERE d.date_day BETWEEN DATE '2012-01-01' AND current_date
+WHERE d.date_key BETWEEN 20120101 AND (SELECT MAX(requested_date_key) FROM {{ ref('fct_service_requests') }})
