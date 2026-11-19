@@ -1,6 +1,5 @@
-import pytest
-
 import export_marts
+import pytest
 
 
 class FakeAthena:
@@ -15,7 +14,9 @@ class FakeAthena:
         return {
             "QueryExecution": {
                 "Status": {"State": self.state, "StateChangeReason": "boom"},
-                "ResultConfiguration": {"OutputLocation": "s3://results-bucket/athena/q1.csv"},
+                "ResultConfiguration": {
+                    "OutputLocation": "s3://results-bucket/athena/q1.csv"
+                },
             }
         }
 
@@ -45,7 +46,9 @@ def test_export_writes_csv_and_copies_to_stable_s3_key(tmp_path):
     s3 = FakeS3("day,requests\n2026-11-01,10\n2026-11-02,12\n")
     session = FakeSession(FakeAthena(), s3)
 
-    rows = export_marts.export_tables(["fct_daily_requests"], tmp_path, "my-bucket", session=session, poll=0)
+    rows = export_marts.export_tables(
+        ["fct_daily_requests"], tmp_path, "my-bucket", session=session, poll=0
+    )
 
     assert rows == {"fct_daily_requests": 2}
     assert (tmp_path / "fct_daily_requests.csv").read_text().startswith("day,requests")
@@ -59,7 +62,9 @@ def test_empty_result_keeps_the_previous_export(tmp_path):
     session = FakeSession(FakeAthena(), FakeS3("day,requests\n"))
 
     with pytest.raises(RuntimeError, match="no rows"):
-        export_marts.export_tables(["fct_daily_requests"], tmp_path, "my-bucket", session=session, poll=0)
+        export_marts.export_tables(
+            ["fct_daily_requests"], tmp_path, "my-bucket", session=session, poll=0
+        )
 
     assert old.read_text() == "day,requests\n2026-11-01,10\n"
 
@@ -68,4 +73,6 @@ def test_failed_query_raises(tmp_path):
     session = FakeSession(FakeAthena(state="FAILED"), FakeS3(""))
 
     with pytest.raises(RuntimeError, match="failed: boom"):
-        export_marts.export_tables(["fct_daily_requests"], tmp_path, "my-bucket", session=session, poll=0)
+        export_marts.export_tables(
+            ["fct_daily_requests"], tmp_path, "my-bucket", session=session, poll=0
+        )

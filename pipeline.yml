@@ -1,0 +1,23 @@
+# Which sources the pipeline pulls, and where dbt and the exports live.
+# Paths are relative to this file. Add a source by adding a block under `sources`.
+# The class must subclass BaseExtractor and live in include/.
+#   backfill: months  -> run() takes a list of 'YYYY-MM' strings (--only 2024-01 2024-02)
+#   backfill: years   -> run() takes a start and an end year (--only 2020 2022)
+sources:
+  service_requests:
+    module: extract_311
+    class: ServiceRequestExtractor
+    out_dir: raw/311
+    backfill: months
+  weather:
+    module: extract_weather
+    class: CalgaryWeatherExtractor
+    out_dir: raw/weather
+    backfill: years
+
+dbt:
+  project_dir: dbt
+  profiles_dir: dbt/.dbt
+
+export:
+  dir: exports
