@@ -28,7 +28,7 @@ The same steps run from the command line with `uv run stratayyc run`.
 
 ## Highlights
 
-- **7.55 million requests** from 2012 to today, refreshed daily and joined to daily weather.
+- **7.44 million requests** from 2012 to today, refreshed daily and joined to daily weather.
 - **Append-only raw layer and incremental loads.** Raw files are never edited; each run re-reads a short overlap, and
   the latest version of each request wins, so re-runs are safe.
 - **Row counts checked on every load** against the API's own counts, recorded in a manifest. A mismatch fails the task.
