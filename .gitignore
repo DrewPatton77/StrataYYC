@@ -14,7 +14,6 @@ wheels/
 # Other
 .DS_Store
 raw/
-infra/iam/dbt_policy.json
 dbt/.dbt
 dbt/logs/
 dbt/dbt_packages/

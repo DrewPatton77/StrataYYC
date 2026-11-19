@@ -1,0 +1,42 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AthenaQueries",
+      "Effect": "Allow",
+      "Action": [
+        "athena:StartQueryExecution", "athena:StopQueryExecution", "athena:GetQueryExecution",
+        "athena:GetQueryResults", "athena:BatchGetQueryExecution", "athena:GetWorkGroup"
+      ],
+      "Resource": "arn:aws:athena:ca-west-1:ACCOUNT_ID:workgroup/calgary-311"
+    },
+    {
+      "Sid": "GlueCatalog",
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetDatabase", "glue:GetDatabases", "glue:CreateDatabase",
+        "glue:GetTable", "glue:GetTables", "glue:CreateTable", "glue:UpdateTable", "glue:DeleteTable",
+        "glue:GetPartition", "glue:GetPartitions", "glue:BatchGetPartition",
+        "glue:CreatePartition", "glue:BatchCreatePartition", "glue:UpdatePartition",
+        "glue:DeletePartition", "glue:BatchDeletePartition"
+      ],
+      "Resource": [
+        "arn:aws:glue:ca-west-1:ACCOUNT_ID:catalog",
+        "arn:aws:glue:ca-west-1:ACCOUNT_ID:database/calgary_311*",
+        "arn:aws:glue:ca-west-1:ACCOUNT_ID:table/calgary_311*/*"
+      ]
+    },
+    {
+      "Sid": "BucketList",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation", "s3:ListBucketMultipartUploads"],
+      "Resource": "arn:aws:s3:::calgary-services-and-requests-data-pipeline"
+    },
+    {
+      "Sid": "BucketObjects",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+      "Resource": "arn:aws:s3:::calgary-services-and-requests-data-pipeline/*"
+    }
+  ]
+}

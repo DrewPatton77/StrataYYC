@@ -1,0 +1,13 @@
+calgary_311:
+  target: dev
+  outputs:
+    dev:
+      type: athena
+      region_name: ca-west-1
+      database: awsdatacatalog
+      schema: calgary_311_dbt                      # dbt-built objects go in calgary_311_dbt_*
+      work_group: calgary-311
+      s3_staging_dir: s3://calgary-services-and-requests-data-pipeline/athena-results/dbt/
+      s3_data_dir: s3://calgary-services-and-requests-data-pipeline/dbt/
+      threads: 4
+      num_retries: 2
