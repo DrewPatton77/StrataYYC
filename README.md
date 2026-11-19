@@ -3,7 +3,7 @@
 A daily data pipeline that lands every City of Calgary 311 service request since 2012 and daily weather in AWS,
 models them with dbt and publishes analyst-ready tables.
 
-![Python](https://img.shields.io/badge/python-3.14+-blue) ![Airflow](https://img.shields.io/badge/orchestration-Airflow%203-017CEE) ![dbt](https://img.shields.io/badge/transform-dbt-FF694B) ![AWS](https://img.shields.io/badge/cloud-S3%20%7C%20Athena-FF9900)
+![Python](https://img.shields.io/badge/python-3.14+-blue) ![Airflow](https://img.shields.io/badge/orchestration-Airflow%203-017CEE) ![dbt](https://img.shields.io/badge/transform-dbt-FF694B) ![AWS](https://img.shields.io/badge/cloud-S3%20%7C%20Athena-FF9900) [![CI](https://github.com/DrewPatton77/StrataYYC/actions/workflows/ci.yml/badge.svg)](https://github.com/DrewPatton77/StrataYYC/actions/workflows/ci.yml)
 
 ## Architecture
 
