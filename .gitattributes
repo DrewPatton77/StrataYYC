@@ -1,2 +1,3 @@
 # Count Jupyter notebooks as documentation, so the language bar shows Python, SQL and others.
 *.ipynb linguist-documentation
+*.ipynb filter=strip-notebook-output
